@@ -132,7 +132,7 @@ struct ChatQuery: Codable {
     /// An object specifying the format that the model must output.
     public let responseFormat: ResponseFormat?
     /// The messages to generate chat completions for
-    public let messages: [Message]
+    public let messages: [ChatCompletionMessageParam]
     /// A list of tools the model may call. Currently, only functions are supported as a tool. Use this to provide a list of functions the model may generate JSON inputs for.
     public let tools: [Tool]?
     /// Controls how the model responds to tool calls. "none" means the model does not call a function, and responds to the end-user. "auto" means the model can pick between and end-user or calling a function. Specifying a particular function via `{"name": "my_function"}` forces the model to call that function. "none" is the default when no functions are present. "auto" is the default if functions are present.
@@ -164,7 +164,7 @@ struct ChatQuery: Codable {
 struct ChatResult: Codable, Equatable {
     public struct Choice: Codable, Equatable {
         public let index: Int
-        public let message: Chat
+        public let message: ChatCompletionMessageParam
         public let finishReason: String
     }
     
@@ -179,14 +179,20 @@ struct ChatResult: Codable, Equatable {
     public let created: TimeInterval
     public let model: Model
     public let choices: [Choice]
-    public let usage: Usage
+    public let usage: Usage?  // Usage is optional in responses
 }
 ```
 
 **Example**
 
 ```swift
-let query = ChatQuery(model: .gpt3_5Turbo, messages: [.init(role: .user, content: "who are you")])
+let query = ChatQuery(
+    messages: [
+        ChatQuery.ChatCompletionMessageParam(role: .system, content: .init("You are Librarian-GPT. You know everything about the books."))!,
+        ChatQuery.ChatCompletionMessageParam(role: .user, content: .init("Who wrote Harry Potter?"))!
+    ],
+    model: .gpt4_turbo_preview
+)
 let result = try await openAI.chats(query: query)
 ```
 
@@ -200,11 +206,11 @@ let result = try await openAI.chats(query: query)
   ▿ choices : 1 element
     ▿ 0 : Choice
       - index : 0
-      ▿ message : Chat
+      ▿ message : ChatCompletionMessageParam
         - role : "assistant"
         - content : "\n\nI\'m an AI language model developed by OpenAI, created to provide assistance and support for various tasks such as answering questions, generating text, and providing recommendations. Nice to meet you!"
       - finish_reason : "stop"
-  ▿ usage : Usage
+  ▿ usage : Usage (optional)
     - prompt_tokens : 10
     - completion_tokens : 39
     - total_tokens : 49
@@ -272,10 +278,10 @@ let functions = [
   )
 ]
 let query = ChatQuery(
-  model: "gpt-3.5-turbo-0613",  // 0613 is the earliest version with function calls support.
   messages: [
-      Chat(role: .user, content: "What's the weather like in Boston?")
+      ChatQuery.ChatCompletionMessageParam(role: .user, content: .init("What's the weather like in Boston?"))!
   ],
+  model: "gpt-3.5-turbo-0613",  // 0613 is the earliest version with function calls support.
   tools: functions.map { Tool.function($0) }
 )
 let result = try await openAI.chats(query: query)
@@ -349,7 +355,9 @@ enum MovieGenre: String, Codable, JSONSchemaEnumConvertible {
 }
 
 let query = ChatQuery(
-    messages: [.system(.init(content: "Best Picture winner at the 2011 Oscars"))],
+    messages: [
+        ChatQuery.ChatCompletionMessageParam(role: .system, content: .init("Best Picture winner at the 2011 Oscars"))!
+    ],
     model: .gpt4_o,
     responseFormat: .derivedJsonSchema(name: "movie-info", type: MovieInfo.self)
 )
@@ -612,7 +620,7 @@ Transcribes audio into the input language.
 public struct AudioTranscriptionQuery: Codable, Equatable {
     
     public let file: Data
-    public let fileName: String
+    public let fileType: FileType
     public let model: Model
     
     public let prompt: String?
@@ -634,7 +642,7 @@ public struct AudioTranscriptionResult: Codable, Equatable {
 
 ```swift
 let data = Data(contentsOfURL:...)
-let query = AudioTranscriptionQuery(file: data, fileName: "audio.m4a", model: .whisper_1)        
+let query = AudioTranscriptionQuery(file: data, fileType: .m4a, model: .whisper_1)        
 
 openAI.audioTranscriptions(query: query) { result in
     //Handle result here
@@ -653,7 +661,7 @@ Translates audio into into English.
 public struct AudioTranslationQuery: Codable, Equatable {
     
     public let file: Data
-    public let fileName: String
+    public let fileType: FileType
     public let model: Model
     
     public let prompt: String?
@@ -674,7 +682,7 @@ public struct AudioTranslationResult: Codable, Equatable {
 
 ```swift
 let data = Data(contentsOfURL:...)
-let query = AudioTranslationQuery(file: data, fileName: "audio.m4a", model: .whisper_1)  
+let query = AudioTranslationQuery(file: data, fileType: .m4a, model: .whisper_1)  
 
 openAI.audioTranslations(query: query) { result in
     //Handle result here
@@ -696,7 +704,7 @@ struct EmbeddingsQuery: Codable {
     /// ID of the model to use.
     public let model: Model
     /// Input text to get embeddings for
-    public let input: String
+    public let input: EmbeddingsInput
 }
 ```
 
@@ -719,7 +727,7 @@ struct EmbeddingsResult: Codable, Equatable {
 **Example**
 
 ```swift
-let query = EmbeddingsQuery(model: .textSearchBabbageDoc, input: "The food was delicious and the waiter...")
+let query = EmbeddingsQuery(model: .textSearchBabbageDoc, input: .string("The food was delicious and the waiter..."))
 openAI.embeddings(query: query) { result in
   //Handle response here
 }
@@ -819,10 +827,13 @@ GPT-4 models are supported.
 As an example: To use the `gpt-4-turbo-preview` model, pass `.gpt4_turbo_preview` as the parameter to the `ChatQuery` init.
 
 ```swift
-let query = ChatQuery(model: .gpt4_turbo_preview, messages: [
-    .init(role: .system, content: "You are Librarian-GPT. You know everything about the books."),
-    .init(role: .user, content: "Who wrote Harry Potter?")
-])
+let query = ChatQuery(
+    messages: [
+        ChatQuery.ChatCompletionMessageParam(role: .system, content: .init("You are Librarian-GPT. You know everything about the books."))!,
+        ChatQuery.ChatCompletionMessageParam(role: .user, content: .init("Who wrote Harry Potter?"))!
+    ],
+    model: .gpt4_turbo_preview
+)
 let result = try await openAI.chats(query: query)
 XCTAssertFalse(result.choices.isEmpty)
 ```
@@ -1025,7 +1036,7 @@ Review [Threads Documentation](https://platform.openai.com/docs/api-reference/th
 
 Example: Create Thread
 ```swift
-let threadsQuery = ThreadsQuery(messages: [Chat(role: message.role, content: message.content)])
+let threadsQuery = ThreadsQuery(messages: [ChatQuery.ChatCompletionMessageParam(role: message.role, content: .init(message.content))!])
 openAI.threads(query: threadsQuery) { result in
   //Handle response here
 }
@@ -1035,7 +1046,7 @@ openAI.threads(query: threadsQuery) { result in
 
 Example: Create and Run Thread
 ```swift
-let threadsQuery = ThreadQuery(messages: [Chat(role: message.role, content: message.content)])
+let threadsQuery = ThreadQuery(messages: [ChatQuery.ChatCompletionMessageParam(role: message.role, content: .init(message.content))!])
 let threadRunQuery = ThreadRunQuery(assistantId: "asst_1234"  thread: threadsQuery)
 openAI.threadRun(query: threadRunQuery) { result in
   //Handle response here
